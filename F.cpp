@@ -4,13 +4,13 @@
 #include <vector>
 #include <queue>
 
+const int64_t kBigNum = 1000 * 1000 * 1000 * 1LL;
+
 enum { ORIENTED = true, NOT_ORIENTED = false };
 
-struct Node {
-    // int64_t from;
-    int64_t to;
-    int64_t flow;
-    int64_t max_flow;
+struct Edge {
+    int64_t value;
+    int64_t weight;
 };
 
 class IGraph {
@@ -23,89 +23,124 @@ public:
         return vertex_degree;
     }
 
-    [[nodiscard]] virtual std::vector<Node> GetNeighbors(const int64_t& v) const = 0;
+    [[nodiscard]] virtual std::vector<int64_t>& GetNeighbors(const int64_t& v) = 0;
 
     virtual void AddEdge(const int64_t& source, const int64_t& dest, const int64_t& weight) = 0;
-    virtual Node& GetNode(const int64_t& source, const int64_t& dest) = 0;
+
+    virtual int64_t GetEdge(int64_t& source, int64_t& dest) const = 0;
+
+    virtual void SetEdge(const int64_t& source, const int64_t& dest, const int64_t& weight) = 0;
 };
 
-class IGraphList final : public IGraph {
+class IGraphList : public IGraph {
 private:
-    std::vector<std::vector<Node>> adjacency_list_;
+    std::vector<std::vector<int64_t>> adjacency_list_;
 
 public:
     explicit IGraphList(const int64_t& vertex_number, bool oriented_status) {
         vertex_degree = vertex_number;
         adjacency_list_.resize(vertex_number);
         for (int64_t i = 0; i < vertex_number; i++) {
-            adjacency_list_[i] = std::vector<Node>();
+            adjacency_list_[i] = std::vector<int64_t>();
         }
         oriented = oriented_status;
     }
 
-    [[nodiscard]] std::vector<Node> GetNeighbors(const int64_t& v) const override {
+    [[nodiscard]] std::vector<int64_t>& GetNeighbors(const int64_t& v) override {
         return adjacency_list_.at(v);
     }
 
     void AddEdge(const int64_t& source, const int64_t& dest, const int64_t& weight) override {
-        adjacency_list_[source].push_back({dest, 0, weight});
-        adjacency_list_[dest].push_back({source, 0, weight});
-    }
-
-    Node& GetNode(const int64_t& source, const int64_t& dest) override {
-        return adjacency_list_[source][dest];
+        adjacency_list_[source].emplace_back(dest + weight);
     }
 };
 
-int64_t BFS(IGraph& graph, int64_t start, int64_t finish, std::vector<int64_t>& par_list, std::vector<int64_t>& path) {
-    par_list.assign(graph.GetVertexDegree(), -1);
-    path.assign(graph.GetVertexDegree(), 0);
+class IGraphMatrix : public IGraph {
+private:
+    std::vector<std::vector<int64_t>> matrix_;
 
-    std::queue<int64_t> q;
-    q.push(start);
+public:
+    explicit IGraphMatrix(const int64_t& quantity) {
+        for (int64_t i = 0; i < quantity; ++i) {
+            std::vector<int64_t> tmp(quantity, 0);
+            matrix_.push_back(tmp);
+        }
+        vertex_degree = quantity;
+    }
 
-    par_list[start] = -1;
-    path[start] = 1000000001;
-    while (!q.empty()) {
-        int64_t curr_node = q.front();
-        q.pop();
+    [[nodiscard]] std::vector<int64_t>& GetNeighbors(const int64_t& v) override {
+        return matrix_[v];
+    }
 
-        std::vector<Node> neighbors = graph.GetNeighbors(curr_node);
+    void AddEdge(const int64_t& a, const int64_t& b, const int64_t& weight) override {
+        if (a == b) {
+            return;
+        }
+        matrix_[a][b] = weight;
+    }
 
-        for (auto& neighbor : neighbors) {
-            int64_t to = neighbor.to;
-            if (par_list[to] == -1) {
-                if (neighbor.max_flow - neighbor.flow > 0) {
-                    par_list[to] = curr_node;
-                    path[to] = std::min(path[curr_node], neighbor.max_flow - neighbor.flow);
-                    if (to == finish) {
-                        return path[finish];
-                    }
-                    q.push(to);
+    int64_t GetEdge(int64_t& source, int64_t& dest) const override {
+        return matrix_[source][dest];
+    }
+
+    void SetEdge(const int64_t& source, const int64_t& dest, const int64_t& weight) override {
+        matrix_[source][dest] = weight;
+    }
+};
+
+bool BFS(IGraph& g, const int64_t& start, const int64_t& finish, std::vector<bool>& used,
+         std::vector<int64_t>& parent) {
+    used.assign(g.GetVertexDegree(), false);
+    parent.assign(g.GetVertexDegree(), kBigNum);
+    std::queue<int64_t> queue;
+    queue.push(start);
+
+    used[start] = true;
+    parent[start] = kBigNum;
+
+    while (!queue.empty()) {
+        int64_t v = queue.front();
+        queue.pop();
+
+        auto neighbors = g.GetNeighbors(v);
+        for (int64_t u = 0; u < g.GetVertexDegree(); u++) {
+            if (!used[u] && neighbors[u] > 0) {
+                parent[u] = v;
+                if (u == finish) {
+                    return true;
                 }
+                queue.push(u);
+                parent[u] = v;
+                used[u] = true;
             }
         }
     }
-    return 0;
+
+    return false;
 }
 
 int64_t EdmondsKarp(IGraph& graph, int start, int finish) {
-    std::vector<int64_t> par_list(graph.GetVertexDegree());
+    std::vector<bool> used(graph.GetVertexDegree());
     std::vector<int64_t> path(graph.GetVertexDegree());
     int64_t max_flow = 0;
     while (true) {
-        int64_t flow = BFS(graph, start, finish, par_list, path);
-        if (!flow) {
+        int64_t flow = kBigNum;
+        if (!BFS(graph, start, finish, used, path)) {
             break;
         }
-        max_flow += flow;
-        int64_t curr_node = finish;
-        while (curr_node != start) {
-            int64_t prev_node = par_list[curr_node];
-            graph.GetNode(prev_node, curr_node).flow += flow;
-            graph.GetNode(curr_node, prev_node).flow -= flow;
-            curr_node = prev_node;
+        for (int64_t v = finish; v != start; v = path[v]) {
+            int64_t u = path[v];
+            flow = std::min(flow, graph.GetEdge(u, v));
         }
+
+        for (int64_t v = finish; v != start; v = path[v]) {
+            int64_t u = path[v];
+
+            graph.SetEdge(u, v, graph.GetEdge(u, v) - flow);
+            graph.SetEdge(v, u, graph.GetEdge(v, u) + flow);
+        }
+
+        max_flow += flow;
     }
     return max_flow;
 }
@@ -118,7 +153,7 @@ int main() {
     int edges = 0;
     std::cin >> vertex >> edges;
 
-    IGraphList graph(vertex, ORIENTED);
+    IGraphMatrix graph(vertex);
     for (int i = 0; i < edges; i++) {
         int x = 0;
         int y = 0;
