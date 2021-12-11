@@ -5,9 +5,8 @@
 #include <stack>
 #include <list>
 
-const int64_t kUndefinedDist = 1000 * 1000 * 1000 * 1LL;
-using VertexT = int32_t;
-using WeightT = int32_t;
+using VertexT = size_t;
+using WeightT = size_t;
 
 enum { ORIENTED = true, NOT_ORIENTED = false };
 
@@ -17,6 +16,8 @@ protected:
     bool oriented_;
 
 public:
+    enum { UNDEFINED_DIST = 1000 * 1000 * 1000 * 1LL };
+
     [[nodiscard]] VertexT GetVertexNum() const {
         return vertex_num_;
     }
@@ -27,7 +28,7 @@ public:
 
     virtual void UpdateEdge(const VertexT& vertex_from, const VertexT& vertex_to, const WeightT& delta_weight) = 0;
 
-    virtual VertexT GetVertex(const VertexT& vertex_from, const VertexT& vertex_to) const = 0;
+    virtual size_t GetEdge(const VertexT& vertex_from, const VertexT& vertex_to) const = 0;
 };
 
 class GraphMatrix final : public IGraph {
@@ -35,6 +36,8 @@ private:
     std::vector<std::vector<VertexT>> matrix_;
 
 public:
+    GraphMatrix() = default;
+
     explicit GraphMatrix(const VertexT& quantity, bool oriented_status) {
         for (VertexT i = 0; i < quantity; ++i) {
             std::vector<VertexT> tmp(quantity, 0);
@@ -44,8 +47,8 @@ public:
         oriented_ = oriented_status;
     }
 
-    GraphMatrix(const GraphMatrix& graph) : IGraph(graph) {
-        matrix_ = graph.matrix_;
+    explicit GraphMatrix(const IGraph& graph) : IGraph(graph) {
+        matrix_ = reinterpret_cast<const GraphMatrix*>(&graph)->matrix_;
     }
 
     [[nodiscard]] std::vector<VertexT> GetNeighbors(const VertexT& current_vertex) const override {
@@ -63,12 +66,12 @@ public:
         matrix_[vertex_from][vertex_to] += delta_weight;
     }
 
-    VertexT GetVertex(const VertexT& vertex_from, const VertexT& vertex_to) const override {
+    size_t GetEdge(const VertexT& vertex_from, const VertexT& vertex_to) const override {
         return matrix_[vertex_from][vertex_to];
     }
 };
 
-void DFS(GraphMatrix& graph, const VertexT& start, std::vector<VertexT>& path, std::vector<bool>& used) {
+void DFS(IGraph& graph, const VertexT& start, std::vector<VertexT>& path, std::vector<bool>& used) {
     std::stack<VertexT> list_for_dfs;
     list_for_dfs.push(start);
     used[start] = true;
@@ -89,41 +92,50 @@ void DFS(GraphMatrix& graph, const VertexT& start, std::vector<VertexT>& path, s
     }
 }
 
-int FordFulkerson(GraphMatrix& graph, const VertexT& start, const VertexT& finish) {
-    GraphMatrix graph_for_algo = graph;
+size_t CurrentMinFlow(IGraph& temp_graph, std::vector<VertexT>& path, const VertexT& start, const VertexT& finish) {
+    size_t flow = IGraph::UNDEFINED_DIST;
 
-    int answer = 0;
+    for (VertexT current = finish; current != start; current = path[current]) {
+        VertexT prev = path[current];
+        flow = std::min(flow, temp_graph.GetEdge(prev, current));
+    }
 
-    std::vector<bool> used(graph_for_algo.GetVertexNum(), false);
-    std::vector<VertexT> path(graph.GetVertexNum(), kUndefinedDist);
+    return flow;
+}
+
+void UpdateFlowInEdge(IGraph& temp_graph, std::vector<VertexT>& path, size_t flow, const VertexT& start, const VertexT& finish) {
+    for (VertexT current = finish; current != start; current = path[current]) {
+        VertexT prev = path[current];
+
+        temp_graph.UpdateEdge(prev, current, -flow);
+        temp_graph.UpdateEdge(current, prev, flow);
+    }
+}
+
+size_t FordFulkerson(IGraph& graph, const VertexT& start, const VertexT& finish) {
+    GraphMatrix temp_graph(graph);
+
+    size_t max_flow = 0;
+
+    std::vector<bool> used(temp_graph.GetVertexNum(), false);
+    std::vector<VertexT> path(graph.GetVertexNum(), IGraph::UNDEFINED_DIST);
 
     while (true) {
-        DFS(graph_for_algo, start, path, used);
+        DFS(temp_graph, start, path, used);
         if (!used[finish]) {
             break;
         }
 
-        WeightT flow = kUndefinedDist;
+        size_t flow = CurrentMinFlow(temp_graph, path, start, finish);
+        UpdateFlowInEdge(temp_graph, path, flow, start, finish);
 
-        for (VertexT current = finish; current != start; current = path[current]) {
-            VertexT prev = path[current];
-            flow = std::min(flow, graph_for_algo.GetVertex(prev, current));
-        }
+        max_flow += flow;
 
-        for (VertexT current = finish; current != start; current = path[current]) {
-            VertexT prev = path[current];
-
-            graph_for_algo.UpdateEdge(prev, current, -flow);
-            graph_for_algo.UpdateEdge(current, prev, flow);
-        }
-
-        answer += flow;
-
-        path.assign(graph_for_algo.GetVertexNum(), kUndefinedDist);
-        used.assign(graph_for_algo.GetVertexNum(), false);
+        path.assign(temp_graph.GetVertexNum(), IGraph::UNDEFINED_DIST);
+        used.assign(temp_graph.GetVertexNum(), false);
     }
 
-    return answer;
+    return max_flow;
 }
 
 int main() {
