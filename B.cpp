@@ -5,59 +5,72 @@
 #include <list>
 #include <set>
 
-const int64_t kMaxSize = 100000;
-using SetT = int;
+using VertexT = size_t;
+using WeightT = size_t;
 
-enum {NO_WEIGHT = 0};
-enum {FIRST_QUERY = 1, SECOND_QUERY = 2, NO_QUERY = 0};
+enum { NO_WEIGHT = 0 };
+enum { FIRST_QUERY = 1, SECOND_QUERY = 2, NO_QUERY = 0 };
 
+template <typename T>
+class FunctorSum {
+public:
+    T operator()(const T& first, const T& second) const {
+        return first + second;
+    }
+};
+
+template <typename ElemT, typename CompValueT, typename Functor>
 class UnionSet {
-    std::vector<SetT> parent_;
-    std::vector<SetT> weight_;
+    std::vector<ElemT> parent_;
+    std::vector<CompValueT> comp_values_;
+    Functor functor_;
 
 public:
+    const size_t MAX_SIZE = 1000000;
+
     UnionSet() {
-        parent_.resize(kMaxSize);
-        weight_.resize(kMaxSize);
+        parent_.resize(MAX_SIZE);
+        comp_values_.resize(MAX_SIZE);
     }
 
-    UnionSet(SetT set_size) {
-        parent_.resize(kMaxSize);
-        weight_.resize(kMaxSize);
+    explicit UnionSet(size_t set_size) {
+        parent_.resize(MAX_SIZE);
+        comp_values_.resize(MAX_SIZE);
 
-        for (SetT i = 0; i < set_size; i++) {
+        for (size_t i = 0; i < set_size; i++) {
             MakeSet(i, NO_WEIGHT);
         }
     }
 
-    void MakeSet(SetT elem, SetT weight) {
+    void MakeSet(const ElemT elem, const CompValueT comp_value = 0) {
         parent_[elem] = elem;
-        weight_[elem] = weight;
+        comp_values_[elem] = comp_value;
     }
 
-    SetT FindSet(SetT elem) {
+    ElemT FindSet(const ElemT elem) {
         if (parent_[elem] == elem) {
             return elem;
         }
         return parent_[elem] = FindSet(parent_[elem]);
     }
 
-    void UnionSets(SetT first_leader, SetT sec_leader, SetT weight) {
+    void UnionSets(ElemT first_leader, ElemT sec_leader, const CompValueT comp_value = 0) {
         first_leader = FindSet(first_leader);
         sec_leader = FindSet(sec_leader);
         if (first_leader != sec_leader) {
-            if (weight_[first_leader] < weight_[sec_leader]) {
+            if (comp_values_[first_leader] < comp_values_[sec_leader]) {
                 std::swap(first_leader, sec_leader);
             }
             parent_[sec_leader] = first_leader;
-            weight_[first_leader] += weight_[sec_leader] + weight;
+            comp_values_[sec_leader] = functor_(comp_values_[sec_leader], comp_value);
+            comp_values_[first_leader] = functor_(comp_values_[first_leader], comp_values_[sec_leader]);
         } else {
-            weight_[first_leader] += weight;
+            comp_values_[first_leader] = functor_(comp_values_[first_leader], comp_value);
         }
     }
 
-    SetT GetWeight(SetT elem) {
-        return weight_[FindSet(elem)];
+    CompValueT GetCompValue(const ElemT elem) {
+        return comp_values_[FindSet(elem)];
     }
 };
 
@@ -65,25 +78,25 @@ int main() {
     std::ios_base::sync_with_stdio(false);
     std::cin.tie(nullptr);
 
-    SetT vertex_num = 0;
-    SetT query_num = 0;
+    size_t vertex_num = 0;
+    size_t query_num = 0;
     std::cin >> vertex_num >> query_num;
 
-    UnionSet set(vertex_num);
+    UnionSet<VertexT, WeightT, FunctorSum<WeightT>> set(vertex_num);
 
-    for (int i = 0; i < query_num; i++) {
-        int current_query = NO_QUERY;
+    for (size_t i = 0; i < query_num; i++) {
+        size_t current_query = NO_QUERY;
         std::cin >> current_query;
         if (current_query == FIRST_QUERY) {
-            SetT edge_begin = 0;
-            SetT edge_end = 0;
-            SetT weight = 0;
+            VertexT edge_begin = 0;
+            VertexT edge_end = 0;
+            WeightT weight = 0;
             std::cin >> edge_begin >> edge_end >> weight;
             set.UnionSets(edge_begin - 1, edge_end - 1, weight);
         } else if (current_query == SECOND_QUERY) {
-            SetT edge_wanted = 0;
-            std::cin >> edge_wanted;
-            std::cout << set.GetWeight(edge_wanted - 1) << "\n";
+            VertexT vertex_weight_wanted = 0;
+            std::cin >> vertex_weight_wanted;
+            std::cout << set.GetCompValue(vertex_weight_wanted - 1) << "\n";
         }
     }
 
