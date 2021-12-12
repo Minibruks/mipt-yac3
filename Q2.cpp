@@ -4,7 +4,6 @@
 #include <vector>
 #include <set>
 
-const int64_t kUndefinedNum = 1000 * 1000 * 1000 * 1LL;
 using VertexT = int32_t;
 using WeightT = int32_t;
 using DistT = int32_t;
@@ -22,13 +21,7 @@ struct Edge {
         weight = 0;
     }
 
-    explicit Edge(const VertexT& vertex_from, const VertexT& vertex_to, const WeightT& weight_from_to) {
-        from = vertex_from;
-        to = vertex_to;
-        weight = weight_from_to;
-    }
-
-    void Update(const VertexT& vertex_from, const VertexT& vertex_to, const WeightT& weight_from_to) {
+    explicit Edge(const VertexT& vertex_from, const VertexT& vertex_to, const WeightT& weight_from_to = 0) {
         from = vertex_from;
         to = vertex_to;
         weight = weight_from_to;
@@ -45,6 +38,8 @@ protected:
     bool oriented_;
 
 public:
+    enum { UNDEFINED_NUM = 1000 * 1000 * 1000 * 1LL };
+
     [[nodiscard]] VertexT GetVertexNum() const {
         return vertex_num_;
     }
@@ -91,18 +86,13 @@ struct Node {
         vertex = new_vert;
     }
 
-    void Update(DistT update_dist, VertexT update_vert) {
-        distant = update_dist;
-        vertex = update_vert;
-    }
-
     bool operator<(const Node& other) const {
-        return distant <= other.distant;
+        return (distant < other.distant) || (distant == other.distant && vertex < other.vertex);
     }
 };
 
-std::vector<VertexT> Dijkstra(IGraphList& graph, VertexT start) {
-    std::vector<VertexT> dists(graph.GetVertexNum(), kUndefinedNum);
+std::vector<int> Dijkstra(IGraphList& graph, VertexT start) {
+    std::vector<int> dists(graph.GetVertexNum(), IGraph::UNDEFINED_NUM);
     dists[start] = 0;
 
     std::set<Node> set_for_algo;
@@ -112,15 +102,17 @@ std::vector<VertexT> Dijkstra(IGraphList& graph, VertexT start) {
         VertexT current_vert = set_for_algo.begin()->vertex;
         set_for_algo.erase(set_for_algo.begin());
         auto neighbors = graph.GetNeighbors(current_vert);
+
         for (auto& neighbor : neighbors) {
             VertexT to = neighbor.to;
-            VertexT len = neighbor.weight;
-            if (dists[current_vert] + len < dists[to]) {
-                Node node_to_change(dists[to], to);
-                set_for_algo.erase(node_to_change);
-                dists[to] = dists[current_vert] + len;
-                node_to_change.Update(dists[to], to);
-                set_for_algo.insert(node_to_change);
+            WeightT weight = neighbor.weight;
+
+            if (dists[current_vert] + weight < dists[to]) {
+                Node node_to_erase(dists[to], to);
+                set_for_algo.erase(node_to_erase);
+                dists[to] = dists[current_vert] + weight;
+                Node node_to_insert(dists[to], to);
+                set_for_algo.insert(node_to_insert);
             }
         }
     }
@@ -139,7 +131,7 @@ int main() {
     int lifts_num = 0;
     std::cin >> floor_needed >> stairs_up >> stairs_down >> lift_in >> lift_out >> lifts_num;
     std::vector<std::vector<int>> floors_for_lifts;
-    VertexT vertex_num = 0;
+    int vertex_num = 0;
     int floors_num = 0;
     for (int i = 0; i < lifts_num; i++) {
         std::vector<int> tmp;
@@ -160,15 +152,15 @@ int main() {
         graph.AddEdge(i - 1, i, stairs_up);
     }
 
-    for (VertexT curr_lift = 0; curr_lift < static_cast<VertexT>(floors_for_lifts.size()); curr_lift++) {
-        for (VertexT curr_floor = 0; curr_floor < static_cast<VertexT>(floors_for_lifts[curr_lift].size()); curr_floor++) {
+    for (int curr_lift = 0; curr_lift < static_cast<int>(floors_for_lifts.size()); curr_lift++) {
+        for (int curr_floor = 0; curr_floor < static_cast<int>(floors_for_lifts[curr_lift].size()); curr_floor++) {
             VertexT lift_vertex = floors_for_lifts[curr_lift][curr_floor];
             graph.AddEdge(vertex_num + curr_lift, lift_vertex - 1, lift_in);
             graph.AddEdge(lift_vertex - 1, vertex_num + curr_lift, lift_out);
         }
     }
 
-    std::vector<VertexT> answer = Dijkstra(graph, 0);
+    std::vector<int> answer = Dijkstra(graph, 0);
     std::cout << answer[floor_needed - 1];
     return 0;
 }
