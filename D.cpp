@@ -4,9 +4,8 @@
 #include <vector>
 #include <set>
 
-const int64_t kUndefinedDist = 1000 * 1000 * 1000 * 1LL;
-using VertexT = int32_t;
-using WeightT = int32_t;
+using VertexT = size_t;
+using WeightT = size_t;
 
 enum { ORIENTED = true, NOT_ORIENTED = false };
 
@@ -21,20 +20,14 @@ struct Edge {
         weight = 0;
     }
 
-    explicit Edge(const VertexT& vertex_from, const VertexT& vertex_to, const WeightT& weight_from_to) {
-        from = vertex_from;
-        to = vertex_to;
-        weight = weight_from_to;
-    }
-
-    void Update(const VertexT& vertex_from, const VertexT& vertex_to, const WeightT& weight_from_to) {
+    explicit Edge(const VertexT& vertex_from, const VertexT& vertex_to, const WeightT& weight_from_to = 0) {
         from = vertex_from;
         to = vertex_to;
         weight = weight_from_to;
     }
 
     bool operator<(const Edge& other) const {
-        return weight < other.weight;
+        return (weight < other.weight) || (weight == other.weight && to < other.to);
     }
 };
 
@@ -44,13 +37,15 @@ protected:
     bool oriented_;
 
 public:
+    enum { UNDEFINED = 1000 * 1000 * 1000 * 1LL };
+
     [[nodiscard]] VertexT GetVertexNum() const {
         return vertex_num_;
     }
 
     [[nodiscard]] virtual std::vector<Edge> GetNeighbors(const VertexT& current_vertex) const = 0;
 
-    virtual void AddEdge(const VertexT& vertex_from, const VertexT& vertex_to, const WeightT& weight) = 0;
+    virtual void AddEdge(const VertexT& vertex_from, const VertexT& vertex_to, const WeightT& weight = 0) = 0;
 };
 
 class GraphList final : public IGraph {
@@ -71,7 +66,7 @@ public:
         return adjacency_list_.at(v);
     }
 
-    void AddEdge(const VertexT& vertex_from, const VertexT& vertex_to, const WeightT& weight) override {
+    void AddEdge(const VertexT& vertex_from, const VertexT& vertex_to, const WeightT& weight = 0) override {
         Edge edge(vertex_from, vertex_to, weight);
         adjacency_list_[vertex_from].push_back(edge);
         if (!oriented_) {
@@ -81,58 +76,68 @@ public:
     }
 };
 
-VertexT MST(const IGraph& graph) {
-    VertexT min_span_tree_sum = 0;
-    std::vector<VertexT> min_edge_weight(graph.GetVertexNum(), kUndefinedDist);
-    std::vector<VertexT> min_edge_end(graph.GetVertexNum(), -1);
+std::vector<Edge> MST(const IGraph& graph) {
+    std::vector<WeightT> min_edge_weight(graph.GetVertexNum(), IGraph::UNDEFINED);
+    std::vector<VertexT> min_edge_end(graph.GetVertexNum(), IGraph::UNDEFINED);
     std::vector<bool> used(graph.GetVertexNum(), false);
 
     min_edge_weight[0] = 0;
 
     std::set<Edge> set_for_find_mst;
+    std::vector<Edge> result_mst_array;
     Edge edge_to_start;
     set_for_find_mst.insert(edge_to_start);
 
     for (VertexT i = 0; i < graph.GetVertexNum(); i++) {
         VertexT current_vertex = set_for_find_mst.begin()->to;
-        VertexT current_weight = set_for_find_mst.begin()->weight;
+        WeightT current_weight = set_for_find_mst.begin()->weight;
         set_for_find_mst.erase(set_for_find_mst.begin());
-        
+
         used[current_vertex] = true;
 
-        if (min_edge_end[current_vertex] != -1) {
-            min_span_tree_sum += current_weight;
+        if (min_edge_end[current_vertex] != IGraph::UNDEFINED) {
+            Edge mst_edge(min_edge_end[current_vertex], current_vertex, current_weight);
+            result_mst_array.push_back(mst_edge);
         }
 
         std::vector<Edge> neighbors = graph.GetNeighbors(current_vertex);
         for (auto& neighbor : neighbors) {
-            VertexT possible_edge = neighbor.to;
-            VertexT possible_weight = neighbor.weight;
+            size_t possible_edge = neighbor.to;
+            WeightT possible_weight = neighbor.weight;
 
             if (possible_weight < min_edge_weight[possible_edge] && !used[possible_edge]) {
-                Edge edge_to_change(neighbor.from, possible_edge, min_edge_weight[possible_edge]);
-                set_for_find_mst.erase(edge_to_change);
+                Edge edge_to_erase(neighbor.from, possible_edge, min_edge_weight[possible_edge]);
+                set_for_find_mst.erase(edge_to_erase);
                 min_edge_weight[possible_edge] = possible_weight;
                 min_edge_end[possible_edge] = current_vertex;
-                edge_to_change.Update(neighbor.from, possible_edge, min_edge_weight[possible_edge]);
-                set_for_find_mst.insert(edge_to_change);
+                Edge edge_to_insert(neighbor.from, possible_edge, min_edge_weight[possible_edge]);
+                set_for_find_mst.insert(edge_to_insert);
             }
         }
     }
-    return min_span_tree_sum;
+    return result_mst_array;
+}
+
+WeightT MSTWeight(std::vector<Edge>& mst_array) {
+    WeightT mst_weight = 0;
+    for (auto& elem : mst_array) {
+        mst_weight += elem.weight;
+    }
+
+    return mst_weight;
 }
 
 int main() {
     std::ios::sync_with_stdio(false);
     std::cin.tie(nullptr);
 
-    int spies_num = 0;
+    size_t spies_num = 0;
     std::cin >> spies_num;
 
     GraphList graph(spies_num + 1, NOT_ORIENTED);
     for (VertexT vertex_from = 0; vertex_from < spies_num; vertex_from++) {
         for (VertexT vertex_to = 0; vertex_to < spies_num; vertex_to++) {
-            VertexT weight = 0;
+            WeightT weight = 0;
             std::cin >> weight;
             if (vertex_to > vertex_from) {
                 graph.AddEdge(vertex_from, vertex_to, weight);
@@ -141,10 +146,12 @@ int main() {
     }
 
     for (VertexT spy = 0; spy < spies_num; spy++) {
-        VertexT phantom_vertex_weight = 0;
+        WeightT phantom_vertex_weight = 0;
         std::cin >> phantom_vertex_weight;
         graph.AddEdge(spy, spies_num, phantom_vertex_weight);
     }
 
-    std::cout << MST(graph) << "\n";
+    std::vector<Edge> mst_array = MST(graph);
+
+    std::cout << MSTWeight(mst_array) << "\n";
 }
